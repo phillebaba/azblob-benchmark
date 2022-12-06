@@ -22,9 +22,10 @@ import (
 type configuration struct {
 	ConnectionString string `arg:"--connection-string,required"`
 
-	StartBlockBytes     int `arg:"--start-block-bytes" default:"2097152"`
-	EndBlockBytes       int `arg:"--end-block-bytes" default:"33554432"`
-	IncrementBlockBytes int `arg:"--increment-block-bytes" default:"1048576"`
+	Reverse             bool `arg:"--reverse" default:"false"`
+	StartBlockBytes     int  `arg:"--start-block-bytes" default:"2097152"`
+	EndBlockBytes       int  `arg:"--end-block-bytes" default:"33554432"`
+	IncrementBlockBytes int  `arg:"--increment-block-bytes" default:"1048576"`
 
 	FileSize    int `arg:"--file-size" default:"536870912"`
 	Files       int `arg:"--files" default:"5"`
@@ -88,14 +89,19 @@ func measure(containerClient *container.Client, cfg configuration) ([][]string, 
 	}
 
 	fileSizeHuman := units.BytesSize(float64(cfg.FileSize))
-	for blockSize := cfg.StartBlockBytes; blockSize <= cfg.EndBlockBytes; blockSize = blockSize + cfg.IncrementBlockBytes {
-		var uploadDurations, downloadDurations []int64
-		blockSizeHuman := units.BytesSize(float64(blockSize))
 
+	for blockSize := cfg.StartBlockBytes; blockSize <= cfg.EndBlockBytes; blockSize = blockSize + cfg.IncrementBlockBytes {
+		adjustedBlockSize := blockSize
+		if cfg.Reverse {
+			adjustedBlockSize = cfg.EndBlockBytes - blockSize + cfg.StartBlockBytes
+		}
+		blockSizeHuman := units.BytesSize(float64(adjustedBlockSize))
+
+		var uploadDurations, downloadDurations []int64
 		for fileCount := 1; fileCount <= cfg.Files; fileCount++ {
-			blobClient := containerClient.NewBlockBlobClient(fmt.Sprintf("%d-%d", blockSize, fileCount))
+			blobClient := containerClient.NewBlockBlobClient(fmt.Sprintf("%d-%d", adjustedBlockSize, fileCount))
 			opts := blockblob.UploadStreamOptions{
-				BlockSize:   blockSize,
+				BlockSize:   adjustedBlockSize,
 				Concurrency: cfg.Concurrency,
 			}
 
