@@ -23,12 +23,12 @@ type configuration struct {
 	ConnectionString string `arg:"--connection-string,required"`
 
 	StartBlockBytes     int `arg:"--start-block-bytes" default:"2097152"`
-	EndBlockBytes       int `arg:"--end-block-bytes" default:"536870912"`
-	IncrementBlockBytes int `arg:"--increment-block-bytes" default:"2097152"`
+	EndBlockBytes       int `arg:"--end-block-bytes" default:"33554432"`
+	IncrementBlockBytes int `arg:"--increment-block-bytes" default:"1048576"`
 
 	FileSize    int `arg:"--file-size" default:"536870912"`
-	Files       int `arg:"--files" default:"1"`
-	Concurrency int `arg:"--concurrency" default:"1"`
+	Files       int `arg:"--files" default:"5"`
+	Concurrency int `arg:"--concurrency" default:"4"`
 
 	CSVFilePath string `arg:"--csv-file-path,required"`
 }
@@ -87,15 +87,17 @@ func measure(containerClient *container.Client, cfg configuration) ([][]string, 
 		{"Block Size", "Upload Duration", "Download Duration"},
 	}
 
+	fileSizeHuman := units.BytesSize(float64(cfg.FileSize))
 	for blockSize := cfg.StartBlockBytes; blockSize <= cfg.EndBlockBytes; blockSize = blockSize + cfg.IncrementBlockBytes {
+		var uploadDurations, downloadDurations []int64
+		blockSizeHuman := units.BytesSize(float64(blockSize))
+
 		for fileCount := 1; fileCount <= cfg.Files; fileCount++ {
 			blobClient := containerClient.NewBlockBlobClient(fmt.Sprintf("%d-%d", blockSize, fileCount))
 			opts := blockblob.UploadStreamOptions{
 				BlockSize:   blockSize,
 				Concurrency: cfg.Concurrency,
 			}
-			fileSizeHuman := units.BytesSize(float64(cfg.FileSize))
-			blockSizeHuman := units.BytesSize(float64(blockSize))
 
 			// Upload File
 			data := make([]byte, cfg.FileSize)
@@ -108,6 +110,7 @@ func measure(containerClient *container.Client, cfg configuration) ([][]string, 
 			}
 			uploadDuration := time.Since(startUpload)
 			fmt.Println("Upload", "File Count", fileCount, "Block Size", blockSizeHuman, "File Size", fileSizeHuman, "Duration", uploadDuration)
+			uploadDurations = append(uploadDurations, uploadDuration.Milliseconds())
 
 			// Download File
 			ctx, cancel = context.WithTimeout(context.Background(), 120*time.Second)
@@ -124,10 +127,19 @@ func measure(containerClient *container.Client, cfg configuration) ([][]string, 
 			}
 			downloadDuration := time.Since(startDownload)
 			fmt.Println("Download", "File Count", fileCount, "Block Size", blockSizeHuman, "File Size", fileSizeHuman, "Duration", downloadDuration)
-
-			// Write measured data
-			out = append(out, []string{blockSizeHuman, strconv.FormatInt(uploadDuration.Milliseconds(), 10), strconv.FormatInt(downloadDuration.Milliseconds(), 10)})
+			downloadDurations = append(downloadDurations, downloadDuration.Milliseconds())
 		}
+
+		// Write measured data
+		out = append(out, []string{blockSizeHuman, strconv.FormatInt(average(uploadDurations), 10), strconv.FormatInt(average(downloadDurations), 10)})
 	}
 	return out, nil
+}
+
+func average(values []int64) int64 {
+	var total int64 = 0
+	for _, v := range values {
+		total = total + v
+	}
+	return total / int64(len(values))
 }
