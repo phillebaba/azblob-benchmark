@@ -30,7 +30,7 @@ type configuration struct {
 	Files       int `arg:"--files" default:"1"`
 	Concurrency int `arg:"--concurrency" default:"1"`
 
-	CSVFilePath string `arg:"--csv-file-path"`
+	CSVFilePath string `arg:"--csv-file-path,required"`
 }
 
 func main() {
